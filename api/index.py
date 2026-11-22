@@ -12,8 +12,8 @@ from typing import List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from pydantic import BaseModel, Field, field_validator
+from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="Winter Great Drive API", version="1.0.0")
 
@@ -165,14 +165,6 @@ class PersonGear(BaseModel):
     glove: str = Field(..., min_length=1, max_length=30)
     hat: str = Field(..., min_length=1, max_length=30)
 
-    @field_validator("name", "coat", "glove", "hat")
-    @classmethod
-    def strip_non_empty(cls, v: str) -> str:
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("Field cannot be empty")
-        return cleaned
-
 
 class SendOtpRequest(BaseModel):
     phone: str
@@ -191,23 +183,19 @@ class RegisterRequest(BaseModel):
     parents: List[PersonGear]
     kids: List[PersonGear] = Field(default_factory=list)
 
-    @field_validator("parents")
-    @classmethod
-    def check_parents(cls, v: List[PersonGear]) -> List[PersonGear]:
-        if len(v) < 1 or len(v) > 2:
-            raise ValueError("Must include 1 or 2 parents/guardians.")
-        return v
-
-    @field_validator("kids")
-    @classmethod
-    def check_kids(cls, v: List[PersonGear]) -> List[PersonGear]:
-        if len(v) > 3:
-            raise ValueError("Maximum of 3 kids allowed per household.")
-        return v
-
 
 class DrawRequest(BaseModel):
     prize: str = Field(..., pattern="^(ps5|tv)$")
+
+
+
+@app.get("/", response_class=HTMLResponse)
+def serve_home():
+    index_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "index.html")
+    if os.path.exists(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    return HTMLResponse(content="<h1>Winter Great Drive API is running</h1><p>public/index.html not found at root.</p>", status_code=200)
 
 
 @app.get("/api/health")
@@ -323,6 +311,13 @@ def verify_otp(payload: VerifyOtpRequest):
 
 @app.post("/api/register")
 def register_family(payload: RegisterRequest):
+    if len(payload.parents) < 1 or len(payload.parents) > 2:
+        raise HTTPException(status_code=422, detail="Must include 1 or 2 parents/guardians.")
+    if len(payload.kids) > 3:
+        raise HTTPException(status_code=422, detail="Maximum of 3 kids allowed per household.")
+    for person in payload.parents + payload.kids:
+        if not person.name.strip() or not person.coat.strip() or not person.glove.strip() or not person.hat.strip():
+            raise HTTPException(status_code=422, detail="All name and size fields must be non-empty.")
     init_db()
     phone = normalize_phone(payload.phone)
     conn, is_pg = get_conn()
@@ -363,8 +358,8 @@ def register_family(payload: RegisterRequest):
             share_code = f"WGD-{secrets.token_hex(3).upper()}"
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        parents_json = json.dumps([p.model_dump() for p in payload.parents])
-        kids_json = json.dumps([k.model_dump() for k in payload.kids])
+        parents_json = json.dumps([p.dict() for p in payload.parents])
+        kids_json = json.dumps([k.dict() for k in payload.kids])
         opt_val = payload.raffle_opt_in if is_pg else (1 if payload.raffle_opt_in else 0)
 
         cur.execute(
