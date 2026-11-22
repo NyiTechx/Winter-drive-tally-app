@@ -191,11 +191,11 @@ class DrawRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def serve_home():
-    index_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "index.html")
+    index_path = os.path.join(os.path.dirname(__file__), "index.html")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), status_code=200)
-    return HTMLResponse(content="<h1>Winter Great Drive API is running</h1><p>public/index.html not found at root.</p>", status_code=200)
+    return HTMLResponse(content="<h1>Winter Great Drive API is running</h1><p>index.html not found.</p>", status_code=200)
 
 
 @app.get("/api/health")
